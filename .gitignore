@@ -9,3 +9,7 @@ build/
 .pytest_cache/
 .mypy_cache/
 *.log
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

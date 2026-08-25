@@ -1,8 +1,10 @@
+from pathlib import Path
+
 import aiosqlite
 import bcrypt
-import uuid
 
-DB_PATH = "banking.db"
+ROOT_DIR = Path(__file__).resolve().parents[2]
+DB_PATH = str(ROOT_DIR / "banking.db")
 
 
 async def init_db():
@@ -162,6 +164,33 @@ async def seed_data():
                 "SAVINGS",
                 50000
             )
+        )
+
+        await db.execute(
+            """
+            INSERT OR IGNORE INTO transactions
+            (
+                transaction_id,
+                source_account,
+                destination_account,
+                amount,
+                currency,
+                status,
+                created_by,
+                idempotency_key
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "TXN1001",
+                "ACC001",
+                "ACC002",
+                5000,
+                "INR",
+                "SUCCESS",
+                "USER001",
+                "MOCK-001",
+            ),
         )
 
         await db.commit()

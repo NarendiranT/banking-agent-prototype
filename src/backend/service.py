@@ -1,7 +1,9 @@
-import bcrypt
-import aiosqlite
+import uuid
 
-from database_db import DB_PATH
+import aiosqlite
+import bcrypt
+
+from backend.database_db import DB_PATH
 
 
 async def verify_pin(
@@ -124,6 +126,33 @@ async def get_transaction_status(
         return dict(transaction)
 
 
+async def get_account(account_id: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        cursor = await db.execute(
+            """
+            SELECT
+                account_id,
+                user_id,
+                account_type,
+                balance,
+                currency,
+                status
+            FROM accounts
+            WHERE account_id = ?
+            """,
+            (account_id,),
+        )
+
+        account = await cursor.fetchone()
+
+        if not account:
+            return None
+
+        return dict(account)
+
+
 async def create_mock_transaction():
 
     async with aiosqlite.connect(DB_PATH) as db:
@@ -156,3 +185,140 @@ async def create_mock_transaction():
         )
 
         await db.commit()
+
+
+async def transfer_money(
+    transaction_id: str,
+    source_account: str,
+    destination_account: str,
+    amount: float,
+    user_id: str,
+):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute("BEGIN IMMEDIATE")
+
+        try:
+            existing_cursor = await db.execute(
+                """
+                SELECT *
+                FROM transactions
+                WHERE transaction_id = ?
+                   OR idempotency_key = ?
+                """,
+                (transaction_id, transaction_id),
+            )
+            existing = await existing_cursor.fetchone()
+
+            if existing:
+                await db.commit()
+                return {
+                    **dict(existing),
+                    "success": existing["status"] == "SUCCESS",
+                    "message": "Transaction already processed.",
+                }
+
+            source_cursor = await db.execute(
+                """
+                SELECT *
+                FROM accounts
+                WHERE account_id = ?
+                """,
+                (source_account,),
+            )
+            source = await source_cursor.fetchone()
+
+            destination_cursor = await db.execute(
+                """
+                SELECT *
+                FROM accounts
+                WHERE account_id = ?
+                """,
+                (destination_account,),
+            )
+            destination = await destination_cursor.fetchone()
+
+            if not source or not destination:
+                await db.rollback()
+                return {
+                    "success": False,
+                    "message": "Source or destination account was not found.",
+                }
+
+            if source["status"] != "ACTIVE" or destination["status"] != "ACTIVE":
+                await db.rollback()
+                return {
+                    "success": False,
+                    "message": "Source or destination account is not active.",
+                }
+
+            if source["balance"] < amount:
+                await db.rollback()
+                return {
+                    "success": False,
+                    "message": "Insufficient balance.",
+                }
+
+            await db.execute(
+                """
+                UPDATE accounts
+                SET balance = balance - ?
+                WHERE account_id = ?
+                """,
+                (amount, source_account),
+            )
+            await db.execute(
+                """
+                UPDATE accounts
+                SET balance = balance + ?
+                WHERE account_id = ?
+                """,
+                (amount, destination_account),
+            )
+
+            final_transaction_id = "TXN" + uuid.uuid4().hex[:8].upper()
+
+            await db.execute(
+                """
+                INSERT INTO transactions
+                (
+                    transaction_id,
+                    source_account,
+                    destination_account,
+                    amount,
+                    currency,
+                    status,
+                    created_by,
+                    idempotency_key
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    final_transaction_id,
+                    source_account,
+                    destination_account,
+                    amount,
+                    "INR",
+                    "SUCCESS",
+                    user_id,
+                    transaction_id,
+                ),
+            )
+
+            await db.commit()
+
+            return {
+                "success": True,
+                "transaction_id": final_transaction_id,
+                "source_account": source_account,
+                "destination_account": destination_account,
+                "amount": amount,
+                "status": "SUCCESS",
+            }
+
+        except Exception as exc:
+            await db.rollback()
+            return {
+                "success": False,
+                "message": f"Transaction failed: {exc}",
+            }

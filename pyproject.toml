@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "banking-agent"
+version = "1.0.0"
+description = "Agentic banking prototype using LangGraph, FastAPI, Streamlit, MCP, and HITL approval."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.9.0",
+    "streamlit>=1.40.0",
+    "requests>=2.32.0",
+    "langgraph>=0.2.60",
+    "langchain-core>=0.3.0",
+    "langgraph-checkpoint-sqlite>=2.0.0",
+    "aiosqlite>=0.20.0",
+    "bcrypt>=4.2.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+banking-api = "backend.main:run"
+banking-ui = "ui.runner:run"
+banking-mcp = "mcp.server:run"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"

@@ -1,9 +1,7 @@
 {
-    "dependencies": [
-      "."
-    ],
-    "graphs": {
-      "banking_agent": "./src/graph/app.py:graph"
-    },
-    "env": ".env"
-  }
+  "dependencies": ["."],
+  "graphs": {
+    "banking_agent": "./src/graph/app.py:graph"
+  },
+  "env": ".env"
+}

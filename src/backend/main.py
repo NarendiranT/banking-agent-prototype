@@ -9,17 +9,21 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from langgraph.types import Command
 
-from database_db import init_db, seed_data
-from graph.app import graph
-from service import verify_pin
+from backend.database_db import init_db, seed_data
+from backend.service import create_mock_transaction, verify_pin
+from graph.app import close_graph, get_graph, init_runtime_graph
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
     await init_db()
     await seed_data()
+    await create_mock_transaction()
+    await init_runtime_graph()
 
     yield
+
+    await close_graph()
 
 
 app = FastAPI(
@@ -30,6 +34,11 @@ app = FastAPI(
 )
 
 thread_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "api"}
 
 
 class ChatRequest(BaseModel):
@@ -74,6 +83,7 @@ async def chat(request: ChatRequest):
     lock = thread_locks[request.thread_id]
 
     async with lock:
+        graph = get_graph()
 
         config = get_config(
             request.thread_id
@@ -153,6 +163,7 @@ async def approve_transaction(
     ]
 
     async with lock:
+        graph = get_graph()
 
         config = get_config(
             request.thread_id
@@ -290,6 +301,7 @@ async def reject_transaction(
     ]
 
     async with lock:
+        graph = get_graph()
 
         config = get_config(
             request.thread_id
@@ -376,6 +388,8 @@ async def get_thread_state(
 
     async with lock:
 
+        graph = get_graph()
+
         config = get_config(
             thread_id
         )
@@ -427,13 +441,16 @@ async def get_thread_state(
             )
 
 
-if __name__ == "__main__":
-
+def run():
     import uvicorn
 
     uvicorn.run(
-        "main:app",
+        "backend.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True
+        reload=True,
     )
+
+
+if __name__ == "__main__":
+    run()

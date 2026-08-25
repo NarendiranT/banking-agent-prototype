@@ -4,8 +4,7 @@ import uuid
 import requests
 import streamlit as st
 
-# from src.config import API_BASE_URL
-API_BASE_URL = "http://localhost:8000"
+from config import API_BASE_URL
 st.set_page_config(
     page_title="Banking Assistant",
     page_icon="🏦",
@@ -231,7 +230,6 @@ if user_input:
         )
 
         data = response.json()
-
 
         if data["status"] == "completed":
 

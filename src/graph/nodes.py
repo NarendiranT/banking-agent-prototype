@@ -4,7 +4,7 @@ import uuid
 from langchain_core.messages import AIMessage
 from langgraph.types import interrupt
 
-from state import AgentState
+from graph.state import AgentState
 from mcp.mcp_client import (
     mcp_get_transaction_status,
     mcp_validate_account,
