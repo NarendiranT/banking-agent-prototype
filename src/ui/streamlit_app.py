@@ -41,7 +41,7 @@ if st.session_state.awaiting_pin and not pending:
     st.divider()
     st.subheader("Identify your account")
     st.info(
-        "Enter your PIN and account ID so the assistant "
+        "Enter your account ID and PIN so the assistant "
         "can use your source account."
     )
     identity_account = st.text_input(

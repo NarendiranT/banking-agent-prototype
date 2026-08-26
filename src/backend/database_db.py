@@ -1,11 +1,11 @@
-import os
 from pathlib import Path
 
 import aiosqlite
 import bcrypt
 
-ROOT_DIR = Path(__file__).resolve().parents[2]
-DB_PATH = os.getenv("BANKING_DB_PATH", str(ROOT_DIR / "banking.db"))
+from config import BANKING_DB_PATH
+
+DB_PATH = str(BANKING_DB_PATH)
 
 
 async def init_db():

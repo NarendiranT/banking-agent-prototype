@@ -9,3 +9,4 @@ langgraph-checkpoint-sqlite>=2.0.0
 aiosqlite>=0.20.0
 bcrypt>=4.2.0
 python-dotenv>=1.0.0
+langgraph-cli[inmem]>=0.4.31

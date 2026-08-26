@@ -1,4 +1,3 @@
-import os
 import sys
 from pathlib import Path
 
@@ -10,6 +9,7 @@ _SRC_DIR = Path(__file__).resolve().parents[1]
 if str(_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_SRC_DIR))
 
+from config import CHECKPOINT_PATH  # noqa: E402
 from graph.nodes import (  # noqa: E402
     approval_node,
     cancel_transaction,
@@ -28,14 +28,6 @@ from graph.routes import (  # noqa: E402
     validation_router,
 )
 from graph.state import AgentState  # noqa: E402
-
-ROOT_DIR = Path(__file__).resolve().parents[2]
-CHECKPOINT_PATH = Path(
-    os.getenv(
-        "CHECKPOINT_PATH",
-        str(ROOT_DIR / "langgraph_checkpoints.db"),
-    )
-)
 
 workflow = StateGraph(AgentState)
 

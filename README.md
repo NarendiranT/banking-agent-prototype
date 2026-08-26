@@ -88,8 +88,8 @@ langgraph.json      LangGraph Studio / `langgraph dev` graph spec
 Python 3.11+ is required.
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 python run.py all
@@ -158,12 +158,12 @@ make docker-up
 | FastAPI | http://localhost:8000 |
 | MCP tools | http://localhost:8001 |
 
-The UI container calls the API at `http://api:8000`. SQLite files (`banking.db` and graph checkpoints) live on the `banking-data` volume so API and MCP share the same accounts and transactions.
+The UI container calls the API at `http://api:8000`. SQLite files are written to the project `data/` folder (`data/banking.db` and `data/langgraph_checkpoints.db`). Docker bind-mounts `./data` into the API and MCP containers so the same files are used on the host.
 
 ```bash
-make docker-logs    # follow logs
-make docker-down    # stop containers
-docker compose down -v   # also delete the SQLite volume
+make docker-logs
+make docker-down
+docker compose down -v
 ```
 
 Start **FastAPI first**, then the UI. The graph calls MCP tools in-process through `src/mcp/mcp_client.py`. The MCP server on port 8001 is the same tool surface for external clients.
