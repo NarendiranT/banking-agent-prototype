@@ -52,7 +52,7 @@ if st.session_state.awaiting_pin and not pending:
     identity_pin = st.text_input(
         "Enter Account PIN",
         type="password",
-        max_chars=6,
+        max_chars=4,
         key="identity_pin",
     )
     if st.session_state.approval_error:
@@ -209,7 +209,7 @@ if pending:
     pin = st.text_input(
         "Enter Transaction PIN",
         type="password",
-        max_chars=6,
+        max_chars=4,
         key="transaction_pin",
     )
     if st.session_state.approval_error:
