@@ -5,7 +5,7 @@ import bcrypt
 
 from config import BANKING_DB_PATH
 
-DB_PATH = str(BANKING_DB_PATH)
+DB_PATH = str(BANKING_DB_PATH.resolve())
 
 
 async def init_db():
@@ -112,3 +112,20 @@ async def seed_data():
             ),
         )
         await db.commit()
+
+
+async def ensure_db():
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """
+            SELECT name FROM sqlite_master
+            WHERE type = 'table' AND name = 'users'
+            """
+        )
+        if not await cursor.fetchone():
+            raise RuntimeError(f"Failed to create tables in {DB_PATH}")
+        cursor = await db.execute("SELECT COUNT(*) FROM users")
+        count = (await cursor.fetchone())[0]
+    if count == 0:
+        await seed_data()

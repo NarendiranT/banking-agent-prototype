@@ -5,7 +5,7 @@ from langchain_core.messages import AIMessage
 from langgraph.types import interrupt
 
 from graph.state import AgentState
-from mcp.mcp_client import (
+from mcp_server.mcp_client import (
     mcp_execute_transaction,
     mcp_get_account_by_pin,
     mcp_get_transaction_status,

@@ -11,13 +11,15 @@ MCP_BASE_URL = os.getenv("MCP_BASE_URL", "http://localhost:8001")
 
 
 def _data_path(env_name: str, filename: str) -> Path:
-    raw = os.getenv(env_name)
+    raw = (os.getenv(env_name) or "").strip().strip('"').strip("'")
     if not raw:
-        return ROOT_DIR / "data" / filename
-    path = Path(raw)
-    if not path.is_absolute():
-        path = ROOT_DIR / path
-    return path
+        path = ROOT_DIR / "data" / filename
+    else:
+        path = Path(raw)
+        if not path.is_absolute():
+            path = ROOT_DIR / path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path.resolve()
 
 
 DATA_DIR = ROOT_DIR / "data"

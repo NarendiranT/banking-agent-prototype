@@ -40,7 +40,7 @@ COMMANDS = {
     "mcp": [
         sys.executable,
         "-m",
-        "mcp.server",
+        "mcp_server",
     ],
 }
 

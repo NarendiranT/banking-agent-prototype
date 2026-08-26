@@ -9,7 +9,7 @@ help:
 	@echo "  make install       Install Python dependencies"
 	@echo "  make api           Run FastAPI on http://localhost:8000"
 	@echo "  make ui            Run Streamlit UI on http://localhost:8501"
-	@echo "  make mcp           Run MCP tool server on http://localhost:8001"
+	@echo "  make mcp           Run FastMCP tool server on http://localhost:8001"
 	@echo "  make run           Run FastAPI, Streamlit UI, and MCP together"
 	@echo "  make docker-build  Build the Docker image"
 	@echo "  make docker-up     Start api, ui, and mcp with Docker Compose"

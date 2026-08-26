@@ -7,15 +7,14 @@ from fastapi import FastAPI, HTTPException
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
-from backend.database_db import init_db, seed_data
+from backend.database_db import ensure_db
 from backend.service import create_mock_transaction, verify_pin
 from graph.app import close_graph, get_graph, init_runtime_graph
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()
-    await seed_data()
+    await ensure_db()
     await create_mock_transaction()
     await init_runtime_graph()
     yield

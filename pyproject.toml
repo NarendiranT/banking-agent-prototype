@@ -20,13 +20,14 @@ dependencies = [
     "aiosqlite>=0.20.0",
     "bcrypt>=4.2.0",
     "python-dotenv>=1.0.0",
-    "langgraph-cli[inmem]>=0.4.31"
+    "langgraph-cli[inmem]>=0.4.31",
+    "fastmcp>=3.0.0",
 ]
 
 [project.scripts]
 banking-api = "backend.main:run"
 banking-ui = "ui.runner:run"
-banking-mcp = "mcp.server:run"
+banking-mcp = "mcp_server.server:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

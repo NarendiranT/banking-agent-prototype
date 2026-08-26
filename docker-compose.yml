@@ -10,10 +10,10 @@ services:
       - "8000:8000"
     environment:
       PYTHONPATH: /app/src
-      BANKING_DB_PATH: /data/banking.db
-      CHECKPOINT_PATH: /data/langgraph_checkpoints.db
+      BANKING_DB_PATH: /app/data/banking.db
+      CHECKPOINT_PATH: /app/data/langgraph_checkpoints.db
     volumes:
-      - banking-data:/data
+      - ./data:/app/data
     healthcheck:
       test:
         [
@@ -31,18 +31,15 @@ services:
   mcp:
     image: banking-agent:latest
     build: .
-    command: >
-      python -m uvicorn mcp.server:app
-      --host 0.0.0.0
-      --port 8001
+    command: python -m mcp_server
     ports:
       - "8001:8001"
     environment:
       PYTHONPATH: /app/src
-      BANKING_DB_PATH: /data/banking.db
-      CHECKPOINT_PATH: /data/langgraph_checkpoints.db
+      BANKING_DB_PATH: /app/data/banking.db
+      CHECKPOINT_PATH: /app/data/langgraph_checkpoints.db
     volumes:
-      - banking-data:/data
+      - ./data:/app/data
     depends_on:
       api:
         condition: service_healthy
@@ -78,6 +75,3 @@ services:
       api:
         condition: service_healthy
     restart: unless-stopped
-
-volumes:
-  banking-data:
