@@ -28,7 +28,10 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Banking MCP Server",
     version="1.0.0",
-    description="Prototype MCP tool server for transaction status, account validation, and transfers.",
+    description=(
+        "Prototype MCP tool server for transaction status, "
+        "account validation, and transfers."
+    ),
     lifespan=lifespan,
 )
 
@@ -70,12 +73,17 @@ async def list_tools():
             },
             {
                 "name": "validate_account",
-                "description": "Validate that a destination account exists and is active.",
+                "description": (
+                    "Validate that a destination account exists and is active."
+                ),
                 "path": "/tools/validate_account",
             },
             {
                 "name": "get_account_by_pin",
-                "description": "Identify a user and source account from a PIN and account ID.",
+                "description": (
+                    "Identify a user and source account from a PIN "
+                    "and account ID."
+                ),
                 "path": "/tools/get_account_by_pin",
             },
             {

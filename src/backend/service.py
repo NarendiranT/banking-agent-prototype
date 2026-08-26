@@ -239,7 +239,10 @@ async def transfer_money(
                     ),
                 }
 
-            if source["status"] != "ACTIVE" or destination["status"] != "ACTIVE":
+            if (
+                source["status"] != "ACTIVE"
+                or destination["status"] != "ACTIVE"
+            ):
                 await db.rollback()
                 return {
                     "success": False,

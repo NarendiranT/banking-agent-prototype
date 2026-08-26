@@ -9,7 +9,7 @@ _SRC_DIR = Path(__file__).resolve().parents[1]
 if str(_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_SRC_DIR))
 
-from graph.nodes import (
+from graph.nodes import (  # noqa: E402
     approval_node,
     cancel_transaction,
     conversation_agent,
@@ -20,13 +20,13 @@ from graph.nodes import (
     unknown_request,
     validate_transaction,
 )
-from graph.routes import (
+from graph.routes import (  # noqa: E402
     account_router,
     approval_router,
     intent_router,
     validation_router,
 )
-from graph.state import AgentState
+from graph.state import AgentState  # noqa: E402
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CHECKPOINT_PATH = ROOT_DIR / "langgraph_checkpoints.db"

@@ -350,7 +350,9 @@ if user_input:
             st.session_state.pending_transaction = {
                 "transaction_id": data["transaction"]["transaction_id"],
                 "source_account": data["transaction"]["source_account"],
-                "destination_account": data["transaction"]["destination_account"],
+                "destination_account": (
+                    data["transaction"]["destination_account"]
+                ),
                 "amount": data["transaction"]["amount"],
             }
             st.rerun()
