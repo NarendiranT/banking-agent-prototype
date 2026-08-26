@@ -11,6 +11,7 @@ if str(_SRC_DIR) not in sys.path:
 
 from config import CHECKPOINT_PATH  # noqa: E402
 from graph.nodes import (  # noqa: E402
+    account_balance,
     approval_node,
     cancel_transaction,
     conversation_agent,
@@ -34,6 +35,7 @@ workflow = StateGraph(AgentState)
 workflow.add_node("conversation_agent", conversation_agent)
 workflow.add_node("set_user_account", set_user_account)
 workflow.add_node("transaction_status", transaction_status)
+workflow.add_node("account_balance", account_balance)
 workflow.add_node("validate_transaction", validate_transaction)
 workflow.add_node("approval", approval_node)
 workflow.add_node("execute_transaction", execute_transaction)
@@ -48,6 +50,7 @@ workflow.add_conditional_edges(
     intent_router,
     {
         "status": "set_user_account",
+        "balance": "set_user_account",
         "transfer": "set_user_account",
         "unknown": "unknown_request",
     },
@@ -58,12 +61,14 @@ workflow.add_conditional_edges(
     account_router,
     {
         "status": "transaction_status",
+        "balance": "account_balance",
         "transfer": "validate_transaction",
         "failed": "final_response",
     },
 )
 
 workflow.add_edge("transaction_status", "final_response")
+workflow.add_edge("account_balance", "final_response")
 
 workflow.add_conditional_edges(
     "validate_transaction",

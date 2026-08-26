@@ -10,6 +10,10 @@ async def mcp_get_transaction_status(transaction_id: str):
     return await get_transaction_status(transaction_id)
 
 
+async def mcp_get_account_balance(account_id: str):
+    return await get_account(account_id)
+
+
 async def mcp_get_account_by_pin(
     pin: str,
     account_id: str | None = None,

@@ -7,6 +7,7 @@ from langgraph.types import interrupt
 from graph.state import AgentState
 from mcp_server.mcp_client import (
     mcp_execute_transaction,
+    mcp_get_account_balance,
     mcp_get_account_by_pin,
     mcp_get_transaction_status,
     mcp_validate_account,
@@ -27,6 +28,9 @@ async def conversation_agent(state: AgentState) -> dict:
         if match:
             result["transaction_id"] = match.group(1).upper()
         return result
+
+    if "balance" in text or ("account" in text and "check" in text):
+        return {"intent": "balance", **identity}
 
     if "transfer" in text or "send" in text or "pay" in text:
         account_match = re.search(
@@ -194,6 +198,40 @@ async def transaction_status(state: AgentState) -> dict:
     }
 
 
+async def account_balance(state: AgentState) -> dict:
+    account_id = (state.get("source_account") or "").strip().upper()
+    if not account_id:
+        return {
+            "answer": "An account ID is required to look up your balance.",
+        }
+
+    account = await mcp_get_account_balance(account_id)
+    if not account:
+        return {
+            "answer": f"I could not find account {account_id}.",
+        }
+
+    user_id = state.get("user_id")
+    if user_id and account.get("user_id") != user_id:
+        return {
+            "answer": (
+                f"Account {account_id} is not associated "
+                f"with your profile."
+            ),
+        }
+
+    return {
+        "source_account": account["account_id"],
+        "account_result": account,
+        "answer": (
+            f"Account {account['account_id']} currently has a balance of "
+            f"₹{account['balance']:,.2f} "
+            f"({account.get('account_type', 'SAVINGS')}, "
+            f"{account.get('status', 'ACTIVE')})."
+        ),
+    }
+
+
 async def validate_transaction(state: AgentState) -> dict:
     source = state["source_account"]
     destination = state["destination_account"]
@@ -308,7 +346,8 @@ async def unknown_request(state: AgentState) -> dict:
         "answer": (
             "I can help you with:\n\n"
             "1. Checking a transaction status\n"
-            "2. Making a new bank transfer"
+            "2. Checking an account balance\n"
+            "3. Making a new bank transfer"
         ),
     }
 

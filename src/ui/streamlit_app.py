@@ -284,7 +284,9 @@ if pending:
                 )
                 st.rerun()
 
-user_input = st.chat_input("Ask about a transaction or make a payment...")
+user_input = st.chat_input(
+    "Ask about a balance, transaction, or make a payment..."
+)
 
 if user_input:
     st.session_state.messages.append({

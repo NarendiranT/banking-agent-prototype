@@ -18,4 +18,5 @@ class AgentState(TypedDict, total=False):
     approval_status: str | None
     auth_verified: bool
     transaction_result: dict | None
+    account_result: dict | None
     answer: str

@@ -1,6 +1,6 @@
 # Banking Agent
 
-LangGraph banking assistant with FastAPI, Streamlit, and FastMCP. Check transaction status or send a transfer. The graph pauses for PIN identity, transaction ID lookup, and payment approval.
+LangGraph banking assistant with FastAPI, Streamlit, and FastMCP. Check an account balance, look up transaction status, or send a transfer. The graph pauses for PIN identity, transaction ID lookup, and payment approval.
 
 ## Setup
 
@@ -44,6 +44,20 @@ Use a new conversation (sidebar **New Conversation**) between examples so identi
 
 ```text
 hello
+```
+
+### Account balance
+
+```text
+What is my account balance?
+```
+
+1. Account ID: `ACC001`, PIN: `1234`, **Continue**
+
+PIN and account can also go in the message:
+
+```text
+Check my balance pin 1234 from ACC001
 ```
 
 ### Transaction status

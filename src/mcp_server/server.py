@@ -32,7 +32,7 @@ async def server_lifespan(server: FastMCP):
 mcp = FastMCP(
     "Banking MCP Server",
     instructions=(
-        "Tools for transaction status, PIN identity, "
+        "Tools for transaction status, account balance, PIN identity, "
         "account validation, and transfers."
     ),
     lifespan=server_lifespan,
@@ -51,6 +51,15 @@ async def get_transaction_status(transaction_id: str) -> dict:
     if not transaction:
         raise ToolError(f"Transaction {transaction_id} was not found.")
     return transaction
+
+
+@mcp.tool
+async def get_account_balance(account_id: str) -> dict:
+    """Look up an account balance by account ID."""
+    account = await lookup_account(account_id)
+    if not account:
+        raise ToolError(f"Account {account_id} was not found.")
+    return account
 
 
 @mcp.tool

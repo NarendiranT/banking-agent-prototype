@@ -5,6 +5,8 @@ def intent_router(state: AgentState) -> str:
     intent = state.get("intent")
     if intent == "status":
         return "status"
+    if intent == "balance":
+        return "balance"
     if intent == "transfer":
         return "transfer"
     return "unknown"
@@ -15,6 +17,8 @@ def account_router(state: AgentState) -> str:
         return "failed"
     if state.get("intent") == "status":
         return "status"
+    if state.get("intent") == "balance":
+        return "balance"
     return "transfer"
 
 
