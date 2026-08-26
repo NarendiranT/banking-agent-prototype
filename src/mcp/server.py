@@ -12,6 +12,7 @@ from backend.service import (
     create_mock_transaction,
     get_account,
     get_transaction_status,
+    get_user_account_by_pin,
     transfer_money,
 )
 
@@ -38,6 +39,11 @@ class TransactionStatusRequest(BaseModel):
 
 class ValidateAccountRequest(BaseModel):
     account_id: str = Field(min_length=1)
+
+
+class IdentifyAccountRequest(BaseModel):
+    pin: str = Field(min_length=4, max_length=6)
+    account_id: str | None = Field(default=None, min_length=1)
 
 
 class ExecuteTransactionRequest(BaseModel):
@@ -68,6 +74,11 @@ async def list_tools():
                 "path": "/tools/validate_account",
             },
             {
+                "name": "get_account_by_pin",
+                "description": "Identify a user and source account from a PIN and account ID.",
+                "path": "/tools/get_account_by_pin",
+            },
+            {
                 "name": "execute_transaction",
                 "description": "Move funds between two accounts.",
                 "path": "/tools/execute_transaction",
@@ -96,6 +107,30 @@ async def validate_account_tool(request: ValidateAccountRequest):
             detail=f"Account {request.account_id} was not found.",
         )
     return account
+
+
+@app.post("/tools/get_account_by_pin")
+async def get_account_by_pin_tool(request: IdentifyAccountRequest):
+    result = await get_user_account_by_pin(
+        request.pin,
+        request.account_id,
+    )
+    if not result:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid PIN.",
+        )
+    if result.get("is_locked"):
+        raise HTTPException(
+            status_code=403,
+            detail="Account is locked.",
+        )
+    if not result.get("account_id"):
+        raise HTTPException(
+            status_code=404,
+            detail="No active account found for this user.",
+        )
+    return result
 
 
 @app.post("/tools/execute_transaction")

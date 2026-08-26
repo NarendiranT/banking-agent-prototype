@@ -6,6 +6,7 @@ from langgraph.types import interrupt
 
 from graph.state import AgentState
 from mcp.mcp_client import (
+    mcp_get_account_by_pin,
     mcp_get_transaction_status,
     mcp_validate_account,
     mcp_execute_transaction,
@@ -17,15 +18,22 @@ async def conversation_agent(
 ) -> dict:
 
     message = state["messages"][-1].content
-
-    text = message.lower()
-
+    if isinstance(message, list):
+        text = message[0]["text"].lower()
+    else:
+        text = message.lower()
+    identity = _identity_from_text(text)
 
     if (
         "status" in text
         or "transaction" in text
         and "check" in text
     ):
+
+        result = {
+            "intent": "status",
+            **identity,
+        }
 
         match = re.search(
             r"(TXN[\w\d]+)",
@@ -34,12 +42,11 @@ async def conversation_agent(
         )
 
         if match:
+            result["transaction_id"] = (
+                match.group(1).upper()
+            )
 
-            return {
-                "intent": "status",
-                "transaction_id":
-                    match.group(1).upper()
-            }
+        return result
 
 
     if (
@@ -49,7 +56,7 @@ async def conversation_agent(
     ):
 
         account_match = re.search(
-            r"(ACC[\w\d]+)",
+            r"(?:to|into)\s+(ACC[\w\d]+)|(ACC[\w\d]+)",
             message,
             re.IGNORECASE
         )
@@ -61,6 +68,11 @@ async def conversation_agent(
 
         if account_match and amount_match:
 
+            destination = (
+                account_match.group(1)
+                or account_match.group(2)
+            ).upper()
+
             amount = float(
                 amount_match
                 .group(1)
@@ -69,15 +81,9 @@ async def conversation_agent(
 
             return {
                 "intent": "transfer",
-
-                # Prototype:
-                # user's source account
-                "source_account": "ACC001",
-
-                "destination_account":
-                    account_match.group(1).upper(),
-
-                "amount": amount
+                "destination_account": destination,
+                "amount": amount,
+                **identity,
             }
 
     return {
@@ -85,13 +91,155 @@ async def conversation_agent(
     }
 
 
+def _identity_from_text(text: str) -> dict:
+    result = {}
+
+    pin_match = re.search(
+        r"\b(?:pin|PIN)\s*[:=]?\s*(\d{4,6})\b",
+        text,
+    )
+    if pin_match:
+        result["pin"] = pin_match.group(1)
+
+    from_match = re.search(
+        r"\b(?:from|account)\s+(ACC[\w\d]+)",
+        text,
+        re.IGNORECASE,
+    )
+    if from_match:
+        result["source_account"] = (
+            from_match.group(1).upper()
+        )
+
+    return result
+
+
+def _resume_field(resume, *keys) -> str:
+    if isinstance(resume, dict):
+        for key in keys:
+            value = resume.get(key)
+            if value:
+                return str(value).strip()
+        return ""
+    return str(resume or "").strip()
+
+
+async def set_user_account(
+    state: AgentState
+) -> dict:
+
+    if state.get("source_account") and state.get("user_id"):
+        return {}
+
+    pin = (state.get("pin") or "").strip()
+    account_id = (state.get("source_account") or "").strip()
+
+    if not pin or not account_id:
+        resume = interrupt(
+            {
+                "type": "set_user_account",
+                "message": (
+                    "Enter your PIN and account ID "
+                    "to identify your source account."
+                ),
+            }
+        )
+        pin = pin or _resume_field(resume, "pin")
+        account_id = account_id or _resume_field(
+            resume,
+            "account_id",
+            "source_account",
+        )
+
+    account_id = account_id.upper()
+
+    if len(pin) < 4 or not account_id:
+        return {
+            "answer": (
+                "A PIN and account ID are required "
+                "to identify your account."
+            ),
+            "intent": "account_setup_failed",
+            "pin": None,
+        }
+
+    account = await mcp_get_account_by_pin(
+        pin,
+        account_id,
+    )
+
+    if not account:
+        return {
+            "answer": (
+                "Invalid PIN. "
+                "I could not identify your account."
+            ),
+            "intent": "account_setup_failed",
+            "pin": None,
+        }
+
+    if account.get("is_locked"):
+        return {
+            "answer": (
+                "This account is locked after too many "
+                "failed PIN attempts."
+            ),
+            "intent": "account_setup_failed",
+            "pin": None,
+        }
+
+    matched_account_id = account.get("account_id")
+
+    if not matched_account_id:
+        return {
+            "answer": (
+                "PIN and account ID do not match, "
+                "or the account is not active."
+            ),
+            "intent": "account_setup_failed",
+            "pin": None,
+        }
+
+    return {
+        "user_id": account["user_id"],
+        "user_name": account.get("name"),
+        "source_account": matched_account_id,
+        "auth_verified": True,
+        "pin": None,
+    }
+
+
 async def transaction_status(
     state: AgentState
 ) -> dict:
 
-    transaction_id = state[
-        "transaction_id"
-    ]
+    transaction_id = (
+        state.get("transaction_id") or ""
+    ).strip()
+
+    resume = interrupt(
+        {
+            "type": "transaction_status",
+            "message": (
+                "Enter the transaction ID to look up "
+                "(for example TXN1001)."
+            ),
+            "transaction_id": transaction_id or None,
+            "source_account": state.get("source_account"),
+        }
+    )
+    transaction_id = (
+        _resume_field(resume, "transaction_id")
+        or transaction_id
+    ).upper()
+
+    if not transaction_id:
+        return {
+            "answer": (
+                "A transaction ID is required "
+                "to look up transfer status."
+            )
+        }
 
     # MCP call
     transaction = (
@@ -109,7 +257,21 @@ async def transaction_status(
             )
         }
 
+    source_account = state.get("source_account")
+    if source_account and source_account not in (
+        transaction.get("source_account"),
+        transaction.get("destination_account"),
+    ):
+        return {
+            "answer": (
+                f"Transaction {transaction_id} "
+                f"is not associated with account "
+                f"{source_account}."
+            )
+        }
+
     return {
+        "transaction_id": transaction_id,
         "transaction_result": transaction,
 
         "answer": (
@@ -181,58 +343,20 @@ async def validate_transaction(
                 "validation_failed"
         }
 
-    return {}
-
-
-async def risk_check(
-    state: AgentState
-) -> dict:
-
-    amount = state["amount"]
-
-    if amount > 50000:
-
-        risk_level = "HIGH"
-
-    elif amount > 10000:
-
-        risk_level = "MEDIUM"
-
-    else:
-
-        risk_level = "LOW"
-
     transaction_id = (
         "PENDING_"
         + uuid.uuid4().hex[:8].upper()
     )
 
-    pending_transaction = {
-
-        "transaction_id":
-            transaction_id,
-
-        "source_account":
-            state["source_account"],
-
-        "destination_account":
-            state["destination_account"],
-
-        "amount":
-            state["amount"],
-
-        "risk_level":
-            risk_level,
-
-        "status":
-            "PENDING_APPROVAL"
-    }
-
     return {
-        "risk_level": risk_level,
-
-        "pending_transaction":
-            pending_transaction
+        "pending_transaction": {
+            "transaction_id": transaction_id,
+            "source_account": source,
+            "destination_account": destination,
+            "amount": amount,
+            "user_id": state.get("user_id"),
+            "status": "PENDING_APPROVAL",
+        }
     }
 
 
@@ -274,7 +398,7 @@ async def approval_node(
         "auth_verified":
             approval.get(
                 "auth_verified",
-                False
+                state.get("auth_verified", False)
             )
     }
 

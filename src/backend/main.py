@@ -43,8 +43,19 @@ async def health():
 
 class ChatRequest(BaseModel):
     thread_id: str = Field(min_length=1)
-    user_id: str = Field(default="USER001")
+    user_id: str | None = None
     message: str = Field(min_length=1)
+
+
+class IdentifyRequest(BaseModel):
+    thread_id: str = Field(min_length=1)
+    pin: str = Field(min_length=4, max_length=6)
+    account_id: str = Field(min_length=1)
+
+
+class StatusLookupRequest(BaseModel):
+    thread_id: str = Field(min_length=1)
+    transaction_id: str = Field(min_length=1)
 
 
 class ApprovalRequest(BaseModel):
@@ -66,15 +77,87 @@ def get_config(thread_id: str) -> dict[str, Any]:
     }
 
 
-def get_interrupt_payload(state) -> dict | None:
-    pending_transaction = state.values.get(
-        "pending_transaction"
-    )
+def get_graph_interrupt(state) -> dict | None:
+    interrupts = getattr(state, "interrupts", None) or ()
+    for item in interrupts:
+        value = getattr(item, "value", item)
+        if isinstance(value, dict):
+            return value
 
-    if not pending_transaction:
+    for task in getattr(state, "tasks", None) or ():
+        for item in getattr(task, "interrupts", None) or ():
+            value = getattr(item, "value", item)
+            if isinstance(value, dict):
+                return value
+
+    pending_transaction = state.values.get("pending_transaction")
+    if pending_transaction and state.next:
+        return {
+            "type": "transaction_approval",
+            "transaction": pending_transaction,
+        }
+
+    next_nodes = list(state.next or ())
+    if "transaction_status" in next_nodes:
+        return {
+            "type": "transaction_status",
+            "transaction_id": state.values.get("transaction_id"),
+            "source_account": state.values.get("source_account"),
+        }
+    if "set_user_account" in next_nodes:
+        return {
+            "type": "set_user_account",
+            "message": (
+                "Enter your PIN and account ID "
+                "to identify your account."
+            ),
+        }
+
+    return None
+
+
+def interrupt_http_response(state) -> dict | None:
+    if not state.next:
         return None
 
-    return pending_transaction
+    payload = get_graph_interrupt(state)
+    if not payload:
+        return None
+
+    if payload.get("type") == "set_user_account":
+        return {
+            "status": "pin_required",
+            "message": payload.get(
+                "message",
+                "Enter your PIN and account ID to identify your account.",
+            ),
+        }
+
+    if payload.get("type") == "transaction_status":
+        return {
+            "status": "txn_id_required",
+            "message": payload.get(
+                "message",
+                "Enter the transaction ID to look up.",
+            ),
+            "transaction_id": payload.get("transaction_id"),
+            "source_account": payload.get("source_account"),
+        }
+
+    transaction = payload.get("transaction") or state.values.get(
+        "pending_transaction"
+    )
+    if transaction:
+        return {
+            "status": "approval_required",
+            "message": (
+                "Please review the transaction "
+                "and enter your PIN to approve."
+            ),
+            "transaction": transaction,
+        }
+
+    return None
 
 
 @app.post("/chat")
@@ -90,8 +173,6 @@ async def chat(request: ChatRequest):
         )
 
         input_state = {
-            "user_id": request.user_id,
-
             "messages": [
                 {
                     "role": "user",
@@ -99,6 +180,8 @@ async def chat(request: ChatRequest):
                 }
             ]
         }
+        if request.user_id:
+            input_state["user_id"] = request.user_id
 
         try:
 
@@ -107,34 +190,13 @@ async def chat(request: ChatRequest):
                 config=config
             )
 
-
             graph_state = await graph.aget_state(
                 config
             )
 
-            if graph_state.next:
-
-                pending_transaction = (
-                    get_interrupt_payload(
-                        graph_state
-                    )
-                )
-
-                if pending_transaction:
-
-                    return {
-                        "status": "approval_required",
-
-                        "message": (
-                            "Please review the transaction "
-                            "and enter your PIN to approve."
-                        ),
-
-                        "transaction": (
-                            pending_transaction
-                        )
-                    }
-
+            paused = interrupt_http_response(graph_state)
+            if paused:
+                return paused
 
             return {
                 "status": "completed",
@@ -150,6 +212,110 @@ async def chat(request: ChatRequest):
             raise HTTPException(
                 status_code=500,
                 detail=f"Graph execution failed: {exc}"
+            )
+
+
+@app.post("/identify")
+async def identify_account(request: IdentifyRequest):
+
+    lock = thread_locks[request.thread_id]
+
+    async with lock:
+        graph = get_graph()
+        config = get_config(request.thread_id)
+
+        try:
+            graph_state = await graph.aget_state(config)
+
+            if "set_user_account" not in graph_state.next:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No account identification is pending for this conversation.",
+                )
+
+            result = await graph.ainvoke(
+                Command(resume={
+                    "pin": request.pin,
+                    "account_id": request.account_id.strip().upper(),
+                }),
+                config=config,
+            )
+
+            graph_state = await graph.aget_state(config)
+
+            paused = interrupt_http_response(graph_state)
+            if paused:
+                return paused
+
+            return {
+                "status": "completed",
+                "message": result.get(
+                    "answer",
+                    "Account identified.",
+                ),
+                "user_id": graph_state.values.get("user_id"),
+                "source_account": graph_state.values.get(
+                    "source_account"
+                ),
+            }
+
+        except HTTPException:
+            raise
+
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Account identification failed: {exc}",
+            )
+
+
+@app.post("/lookup")
+async def lookup_transaction_status(request: StatusLookupRequest):
+
+    lock = thread_locks[request.thread_id]
+
+    async with lock:
+        graph = get_graph()
+        config = get_config(request.thread_id)
+
+        try:
+            graph_state = await graph.aget_state(config)
+
+            if "transaction_status" not in graph_state.next:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No transaction status lookup is pending for this conversation.",
+                )
+
+            result = await graph.ainvoke(
+                Command(resume={
+                    "transaction_id": request.transaction_id.strip().upper(),
+                }),
+                config=config,
+            )
+
+            graph_state = await graph.aget_state(config)
+
+            paused = interrupt_http_response(graph_state)
+            if paused:
+                return paused
+
+            return {
+                "status": "completed",
+                "message": result.get(
+                    "answer",
+                    "Transaction status lookup completed.",
+                ),
+                "transaction": result.get("transaction_result"),
+            }
+
+        except HTTPException:
+            raise
+
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Transaction status lookup failed: {exc}",
             )
 
 
@@ -414,6 +580,11 @@ async def get_thread_state(
                 "user_id": state.values.get(
                     "user_id"
                 ),
+
+                "source_account":
+                    state.values.get(
+                        "source_account"
+                    ),
 
                 "approval_status":
                     state.values.get(

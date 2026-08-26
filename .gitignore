@@ -8,6 +8,7 @@ build/
 .DS_Store
 .pytest_cache/
 .mypy_cache/
+.langgraph_api/
 *.log
 *.db
 *.db-journal

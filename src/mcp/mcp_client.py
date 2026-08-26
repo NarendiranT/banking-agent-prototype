@@ -1,6 +1,7 @@
 from backend.service import (
     get_transaction_status,
     get_account,
+    get_user_account_by_pin,
     transfer_money,
 )
 
@@ -13,6 +14,13 @@ async def mcp_get_transaction_status(
     return await get_transaction_status(
         transaction_id
     )
+
+
+async def mcp_get_account_by_pin(
+    pin: str,
+    account_id: str | None = None,
+):
+    return await get_user_account_by_pin(pin, account_id)
 
 
 async def mcp_validate_account(

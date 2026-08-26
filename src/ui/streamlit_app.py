@@ -21,6 +21,15 @@ if "messages" not in st.session_state:
 if "pending_transaction" not in st.session_state:
     st.session_state.pending_transaction = None
 
+if "awaiting_pin" not in st.session_state:
+    st.session_state.awaiting_pin = False
+
+if "awaiting_txn_id" not in st.session_state:
+    st.session_state.awaiting_txn_id = False
+
+if "pending_txn_id" not in st.session_state:
+    st.session_state.pending_txn_id = ""
+
 if "approval_error" not in st.session_state:
     st.session_state.approval_error = None
 
@@ -40,6 +49,196 @@ for message in st.session_state.messages:
 
 
 pending = st.session_state.pending_transaction
+
+if st.session_state.awaiting_pin and not pending:
+
+    st.divider()
+    st.subheader("Identify your account")
+    st.info(
+        "Enter your PIN and account ID so the assistant "
+        "can use your source account."
+    )
+
+    identity_pin = st.text_input(
+        "Enter Account PIN",
+        type="password",
+        max_chars=6,
+        key="identity_pin",
+    )
+
+    identity_account = st.text_input(
+        "Enter Account ID",
+        placeholder="ACC001",
+        key="identity_account",
+    )
+
+    if st.session_state.approval_error:
+        st.error(st.session_state.approval_error)
+
+    if st.button(
+        "Continue",
+        use_container_width=True,
+        type="primary",
+    ):
+        if not identity_pin:
+            st.session_state.approval_error = "Please enter your PIN."
+            st.rerun()
+
+        if not identity_account:
+            st.session_state.approval_error = "Please enter your account ID."
+            st.rerun()
+
+        try:
+            response = requests.post(
+                f"{API_BASE_URL}/identify",
+                json={
+                    "thread_id": st.session_state.thread_id,
+                    "pin": identity_pin,
+                    "account_id": identity_account.strip().upper(),
+                },
+                timeout=30,
+            )
+            data = response.json()
+
+            if response.status_code != 200:
+                st.session_state.approval_error = data.get(
+                    "detail",
+                    "PIN verification failed.",
+                )
+                st.rerun()
+
+            if data.get("status") == "txn_id_required":
+                st.session_state.awaiting_pin = False
+                st.session_state.awaiting_txn_id = True
+                st.session_state.pending_txn_id = data.get(
+                    "transaction_id"
+                ) or ""
+                st.session_state.pop("lookup_txn_id", None)
+                st.session_state.approval_error = None
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": data.get(
+                            "message",
+                            "Enter the transaction ID to look up.",
+                        ),
+                    }
+                )
+                st.rerun()
+
+            if data.get("status") == "approval_required":
+                st.session_state.awaiting_pin = False
+                st.session_state.approval_error = None
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": data.get(
+                            "message",
+                            "This transaction requires your approval.",
+                        ),
+                    }
+                )
+                transaction = data["transaction"]
+                st.session_state.pending_transaction = {
+                    "transaction_id": transaction["transaction_id"],
+                    "source_account": transaction["source_account"],
+                    "destination_account": transaction["destination_account"],
+                    "amount": transaction["amount"],
+                }
+                st.rerun()
+
+            st.session_state.awaiting_pin = False
+            st.session_state.approval_error = None
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": data.get(
+                        "message",
+                        "Account identified.",
+                    ),
+                }
+            )
+            st.rerun()
+
+        except requests.RequestException:
+            st.session_state.approval_error = (
+                "Unable to communicate with banking service."
+            )
+            st.rerun()
+
+
+if (
+    st.session_state.awaiting_txn_id
+    and not pending
+    and not st.session_state.awaiting_pin
+):
+
+    st.divider()
+    st.subheader("Transaction status")
+    st.info("Confirm the transaction ID to look up.")
+
+    if "lookup_txn_id" not in st.session_state:
+        st.session_state.lookup_txn_id = st.session_state.pending_txn_id
+
+    lookup_txn_id = st.text_input(
+        "Enter Transaction ID",
+        placeholder="TXN1001",
+        key="lookup_txn_id",
+    )
+
+    if st.session_state.approval_error:
+        st.error(st.session_state.approval_error)
+
+    if st.button(
+        "Look up status",
+        use_container_width=True,
+        type="primary",
+    ):
+        if not lookup_txn_id:
+            st.session_state.approval_error = (
+                "Please enter a transaction ID."
+            )
+            st.rerun()
+
+        try:
+            response = requests.post(
+                f"{API_BASE_URL}/lookup",
+                json={
+                    "thread_id": st.session_state.thread_id,
+                    "transaction_id": lookup_txn_id.strip().upper(),
+                },
+                timeout=30,
+            )
+            data = response.json()
+
+            if response.status_code != 200:
+                st.session_state.approval_error = data.get(
+                    "detail",
+                    "Transaction lookup failed.",
+                )
+                st.rerun()
+
+            st.session_state.awaiting_txn_id = False
+            st.session_state.pending_txn_id = ""
+            st.session_state.pop("lookup_txn_id", None)
+            st.session_state.approval_error = None
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": data.get(
+                        "message",
+                        "Transaction status lookup completed.",
+                    ),
+                }
+            )
+            st.rerun()
+
+        except requests.RequestException:
+            st.session_state.approval_error = (
+                "Unable to communicate with banking service."
+            )
+            st.rerun()
+
 
 if pending:
 
@@ -63,9 +262,6 @@ if pending:
     with col2:
         st.write("**To Account**")
         st.write(pending["destination_account"])
-
-        st.write("**Risk Level**")
-        st.write(pending.get("risk_level", "UNKNOWN"))
 
     st.write("**Pending Transaction ID**")
 
@@ -246,6 +442,46 @@ if user_input:
                 st.markdown(assistant_message)
 
 
+        elif data["status"] == "pin_required":
+
+            assistant_message = data.get(
+                "message",
+                "Enter your PIN and account ID to identify your account.",
+            )
+
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": assistant_message,
+                }
+            )
+
+            st.session_state.awaiting_pin = True
+            st.session_state.approval_error = None
+            st.rerun()
+
+        elif data["status"] == "txn_id_required":
+
+            assistant_message = data.get(
+                "message",
+                "Enter the transaction ID to look up.",
+            )
+
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": assistant_message,
+                }
+            )
+
+            st.session_state.awaiting_txn_id = True
+            st.session_state.pending_txn_id = data.get(
+                "transaction_id"
+            ) or ""
+            st.session_state.pop("lookup_txn_id", None)
+            st.session_state.approval_error = None
+            st.rerun()
+
         elif data["status"] == "approval_required":
 
             assistant_message = data.get(
@@ -265,10 +501,6 @@ if user_input:
                 "source_account": data["transaction"]["source_account"],
                 "destination_account": data["transaction"]["destination_account"],
                 "amount": data["transaction"]["amount"],
-                "risk_level": data["transaction"].get(
-                    "risk_level",
-                    "LOW",
-                ),
             }
 
             st.rerun()
@@ -300,6 +532,14 @@ with st.sidebar:
         st.session_state.messages = []
 
         st.session_state.pending_transaction = None
+
+        st.session_state.awaiting_pin = False
+
+        st.session_state.awaiting_txn_id = False
+
+        st.session_state.pending_txn_id = ""
+
+        st.session_state.pop("lookup_txn_id", None)
 
         st.session_state.approval_error = None
 

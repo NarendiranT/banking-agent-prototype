@@ -18,6 +18,22 @@ def intent_router(
     return "unknown"
 
 
+def account_router(
+    state: AgentState
+) -> str:
+
+    if (
+        state.get("intent")
+        == "account_setup_failed"
+    ):
+        return "failed"
+
+    if state.get("intent") == "status":
+        return "status"
+
+    return "transfer"
+
+
 def validation_router(
     state: AgentState
 ) -> str:

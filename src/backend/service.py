@@ -6,6 +6,92 @@ import bcrypt
 from backend.database_db import DB_PATH
 
 
+async def get_user_account_by_pin(
+    pin: str,
+    account_id: str | None = None,
+) -> dict | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        cursor = await db.execute(
+            """
+            SELECT
+                user_id,
+                name,
+                pin_hash,
+                is_locked
+            FROM users
+            """
+        )
+        users = await cursor.fetchall()
+
+        matched = None
+        for user in users:
+            if bcrypt.checkpw(pin.encode(), user["pin_hash"].encode()):
+                matched = user
+                break
+
+        if not matched:
+            return None
+
+        if matched["is_locked"]:
+            return {
+                "user_id": matched["user_id"],
+                "name": matched["name"],
+                "is_locked": True,
+            }
+
+        if account_id:
+            cursor = await db.execute(
+                """
+                SELECT
+                    account_id,
+                    user_id,
+                    account_type,
+                    balance,
+                    currency,
+                    status
+                FROM accounts
+                WHERE user_id = ?
+                  AND account_id = ?
+                  AND status = 'ACTIVE'
+                """,
+                (matched["user_id"], account_id.upper()),
+            )
+        else:
+            cursor = await db.execute(
+                """
+                SELECT
+                    account_id,
+                    user_id,
+                    account_type,
+                    balance,
+                    currency,
+                    status
+                FROM accounts
+                WHERE user_id = ?
+                  AND status = 'ACTIVE'
+                ORDER BY created_at
+                LIMIT 1
+                """,
+                (matched["user_id"],),
+            )
+        account = await cursor.fetchone()
+
+        if not account:
+            return {
+                "user_id": matched["user_id"],
+                "name": matched["name"],
+                "is_locked": False,
+            }
+
+        return {
+            **dict(account),
+            "name": matched["name"],
+            "is_locked": False,
+        }
+
+
 async def verify_pin(
     user_id: str,
     pin: str

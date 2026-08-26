@@ -12,15 +12,17 @@ class AgentState(TypedDict, total=False):
 
     user_id: str
 
+    user_name: str | None
+
     intent: str
+
+    pin: str | None
 
     transaction_id: str | None
 
     source_account: str | None
     destination_account: str | None
     amount: float | None
-
-    risk_level: str | None
 
     pending_transaction: dict | None
 

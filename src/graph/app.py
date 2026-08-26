@@ -1,8 +1,13 @@
-import aiosqlite
+import sys
 from pathlib import Path
 
+import aiosqlite
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
+
+_SRC_DIR = Path(__file__).resolve().parents[1]
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
 
 from graph.nodes import (
     approval_node,
@@ -10,12 +15,13 @@ from graph.nodes import (
     conversation_agent,
     execute_transaction,
     final_response,
-    risk_check,
+    set_user_account,
     transaction_status,
     unknown_request,
     validate_transaction,
 )
 from graph.routes import (
+    account_router,
     approval_router,
     intent_router,
     validation_router,
@@ -28,9 +34,9 @@ CHECKPOINT_PATH = ROOT_DIR / "langgraph_checkpoints.db"
 workflow = StateGraph(AgentState)
 
 workflow.add_node("conversation_agent", conversation_agent)
+workflow.add_node("set_user_account", set_user_account)
 workflow.add_node("transaction_status", transaction_status)
 workflow.add_node("validate_transaction", validate_transaction)
-workflow.add_node("risk_check", risk_check)
 workflow.add_node("approval", approval_node)
 workflow.add_node("execute_transaction", execute_transaction)
 workflow.add_node("cancel_transaction", cancel_transaction)
@@ -43,9 +49,19 @@ workflow.add_conditional_edges(
     "conversation_agent",
     intent_router,
     {
+        "status": "set_user_account",
+        "transfer": "set_user_account",
+        "unknown": "unknown_request",
+    },
+)
+
+workflow.add_conditional_edges(
+    "set_user_account",
+    account_router,
+    {
         "status": "transaction_status",
         "transfer": "validate_transaction",
-        "unknown": "unknown_request",
+        "failed": "final_response",
     },
 )
 
@@ -55,12 +71,10 @@ workflow.add_conditional_edges(
     "validate_transaction",
     validation_router,
     {
-        "valid": "risk_check",
+        "valid": "approval",
         "failed": "final_response",
     },
 )
-
-workflow.add_edge("risk_check", "approval")
 
 workflow.add_conditional_edges(
     "approval",
