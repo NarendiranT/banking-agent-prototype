@@ -88,7 +88,10 @@ def main() -> int:
     parser.add_argument(
         "service",
         choices=["api", "ui", "mcp", "all"],
-        help="Service to start: FastAPI (api), Streamlit UI (ui), MCP server (mcp), or all.",
+        help=(
+            "Service to start: FastAPI (api), Streamlit UI (ui), "
+            "MCP server (mcp), or all."
+        ),
     )
     args = parser.parse_args()
 
