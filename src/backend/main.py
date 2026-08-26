@@ -1,28 +1,24 @@
-
 import asyncio
 from collections import defaultdict
-from typing import Any
 from contextlib import asynccontextmanager
-
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
 from langgraph.types import Command
+from pydantic import BaseModel, Field
 
 from backend.database_db import init_db, seed_data
 from backend.service import create_mock_transaction, verify_pin
 from graph.app import close_graph, get_graph, init_runtime_graph
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
     await init_db()
     await seed_data()
     await create_mock_transaction()
     await init_runtime_graph()
-
     yield
-
     await close_graph()
 
 
@@ -30,7 +26,9 @@ app = FastAPI(
     title="Banking Agent API",
     lifespan=lifespan,
     version="1.0.0",
-    description="Agentic banking prototype using LangGraph, MCP and HITL approval.",
+    description=(
+        "Agentic banking prototype using LangGraph, MCP and HITL approval."
+    ),
 )
 
 thread_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
@@ -70,11 +68,7 @@ class RejectRequest(BaseModel):
 
 
 def get_config(thread_id: str) -> dict[str, Any]:
-    return {
-        "configurable": {
-            "thread_id": thread_id
-        }
-    }
+    return {"configurable": {"thread_id": thread_id}}
 
 
 def get_graph_interrupt(state) -> dict | None:
@@ -108,11 +102,9 @@ def get_graph_interrupt(state) -> dict | None:
         return {
             "type": "set_user_account",
             "message": (
-                "Enter your PIN and account ID "
-                "to identify your account."
+                "Enter your PIN and account ID to identify your account."
             ),
         }
-
     return None
 
 
@@ -156,81 +148,53 @@ def interrupt_http_response(state) -> dict | None:
             ),
             "transaction": transaction,
         }
-
     return None
 
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
-
     lock = thread_locks[request.thread_id]
-
     async with lock:
         graph = get_graph()
-
-        config = get_config(
-            request.thread_id
-        )
-
+        config = get_config(request.thread_id)
         input_state = {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": request.message
-                }
-            ]
+            "messages": [{"role": "user", "content": request.message}],
         }
         if request.user_id:
             input_state["user_id"] = request.user_id
 
         try:
-
-            result = await graph.ainvoke(
-                input_state,
-                config=config
-            )
-
-            graph_state = await graph.aget_state(
-                config
-            )
-
+            result = await graph.ainvoke(input_state, config=config)
+            graph_state = await graph.aget_state(config)
             paused = interrupt_http_response(graph_state)
             if paused:
                 return paused
-
             return {
                 "status": "completed",
-
-                "message": result.get(
-                    "answer",
-                    "Request completed."
-                )
+                "message": result.get("answer", "Request completed."),
             }
-
         except Exception as exc:
-
             raise HTTPException(
                 status_code=500,
-                detail=f"Graph execution failed: {exc}"
+                detail=f"Graph execution failed: {exc}",
             )
 
 
 @app.post("/identify")
 async def identify_account(request: IdentifyRequest):
-
     lock = thread_locks[request.thread_id]
-
     async with lock:
         graph = get_graph()
         config = get_config(request.thread_id)
-
         try:
             graph_state = await graph.aget_state(config)
-
             if "set_user_account" not in graph_state.next:
                 raise HTTPException(
                     status_code=400,
-                    detail="No account identification is pending for this conversation.",
+                    detail=(
+                        "No account identification is pending "
+                        "for this conversation."
+                    ),
                 )
 
             result = await graph.ainvoke(
@@ -240,28 +204,18 @@ async def identify_account(request: IdentifyRequest):
                 }),
                 config=config,
             )
-
             graph_state = await graph.aget_state(config)
-
             paused = interrupt_http_response(graph_state)
             if paused:
                 return paused
-
             return {
                 "status": "completed",
-                "message": result.get(
-                    "answer",
-                    "Account identified.",
-                ),
+                "message": result.get("answer", "Account identified."),
                 "user_id": graph_state.values.get("user_id"),
-                "source_account": graph_state.values.get(
-                    "source_account"
-                ),
+                "source_account": graph_state.values.get("source_account"),
             }
-
         except HTTPException:
             raise
-
         except Exception as exc:
             raise HTTPException(
                 status_code=500,
@@ -271,20 +225,19 @@ async def identify_account(request: IdentifyRequest):
 
 @app.post("/lookup")
 async def lookup_transaction_status(request: StatusLookupRequest):
-
     lock = thread_locks[request.thread_id]
-
     async with lock:
         graph = get_graph()
         config = get_config(request.thread_id)
-
         try:
             graph_state = await graph.aget_state(config)
-
             if "transaction_status" not in graph_state.next:
                 raise HTTPException(
                     status_code=400,
-                    detail="No transaction status lookup is pending for this conversation.",
+                    detail=(
+                        "No transaction status lookup is pending "
+                        "for this conversation."
+                    ),
                 )
 
             result = await graph.ainvoke(
@@ -293,13 +246,10 @@ async def lookup_transaction_status(request: StatusLookupRequest):
                 }),
                 config=config,
             )
-
             graph_state = await graph.aget_state(config)
-
             paused = interrupt_http_response(graph_state)
             if paused:
                 return paused
-
             return {
                 "status": "completed",
                 "message": result.get(
@@ -308,10 +258,8 @@ async def lookup_transaction_status(request: StatusLookupRequest):
                 ),
                 "transaction": result.get("transaction_result"),
             }
-
         except HTTPException:
             raise
-
         except Exception as exc:
             raise HTTPException(
                 status_code=500,
@@ -320,295 +268,151 @@ async def lookup_transaction_status(request: StatusLookupRequest):
 
 
 @app.post("/approve")
-async def approve_transaction(
-    request: ApprovalRequest
-):
-
-    lock = thread_locks[
-        request.thread_id
-    ]
-
+async def approve_transaction(request: ApprovalRequest):
+    lock = thread_locks[request.thread_id]
     async with lock:
         graph = get_graph()
-
-        config = get_config(
-            request.thread_id
-        )
-
+        config = get_config(request.thread_id)
         try:
-
-
-            graph_state = await graph.aget_state(
-                config
+            graph_state = await graph.aget_state(config)
+            pending_transaction = graph_state.values.get(
+                "pending_transaction"
             )
-
-            pending_transaction = (
-                graph_state.values.get(
-                    "pending_transaction"
-                )
-            )
-
             if not pending_transaction:
-
                 raise HTTPException(
                     status_code=404,
                     detail=(
-                        "No pending transaction found "
-                        "for this conversation."
-                    )
+                        "No pending transaction found for this conversation."
+                    ),
                 )
 
-            stored_transaction_id = (
-                pending_transaction.get(
-                    "transaction_id"
-                )
-            )
-
-            if (
-                stored_transaction_id
-                != request.transaction_id
-            ):
-
+            stored_transaction_id = pending_transaction.get("transaction_id")
+            if stored_transaction_id != request.transaction_id:
                 raise HTTPException(
                     status_code=400,
-                    detail="Transaction ID mismatch."
+                    detail="Transaction ID mismatch.",
                 )
 
-
-            user_id = graph_state.values.get(
-                "user_id"
-            )
-
+            user_id = graph_state.values.get("user_id")
             if not user_id:
-
                 raise HTTPException(
                     status_code=400,
-                    detail="User information unavailable."
+                    detail="User information unavailable.",
                 )
 
-            pin_valid = await verify_pin(
-                user_id=user_id,
-                pin=request.pin
-            )
-
+            pin_valid = await verify_pin(user_id=user_id, pin=request.pin)
             if not pin_valid:
-
                 raise HTTPException(
                     status_code=401,
-                    detail="Invalid transaction PIN."
+                    detail="Invalid transaction PIN.",
                 )
-
 
             result = await graph.ainvoke(
-
-                Command(
-                    resume={
-                        "approved": True,
-                        "auth_verified": True,
-                        "transaction_id":
-                            request.transaction_id
-                    }
-                ),
-
-                config=config
+                Command(resume={
+                    "approved": True,
+                    "auth_verified": True,
+                    "transaction_id": request.transaction_id,
+                }),
+                config=config,
             )
-
-            new_state = await graph.aget_state(
-                config
-            )
-
+            new_state = await graph.aget_state(config)
             if new_state.next:
-
                 return {
                     "status": "processing",
-                    "message": (
-                        "Transaction is still being "
-                        "processed."
-                    )
+                    "message": "Transaction is still being processed.",
                 }
-
-
             return {
                 "status": "completed",
-
                 "message": result.get(
                     "answer",
-                    (
-                        "Transaction completed "
-                        "successfully."
-                    )
+                    "Transaction completed successfully.",
                 ),
-
-                "transaction": result.get(
-                    "transaction_result"
-                )
+                "transaction": result.get("transaction_result"),
             }
-
         except HTTPException:
             raise
-
         except Exception as exc:
-
             raise HTTPException(
                 status_code=500,
-                detail=(
-                    f"Transaction approval failed: {exc}"
-                )
+                detail=f"Transaction approval failed: {exc}",
             )
 
 
 @app.post("/reject")
-async def reject_transaction(
-    request: RejectRequest
-):
-
-    lock = thread_locks[
-        request.thread_id
-    ]
-
+async def reject_transaction(request: RejectRequest):
+    lock = thread_locks[request.thread_id]
     async with lock:
         graph = get_graph()
-
-        config = get_config(
-            request.thread_id
-        )
-
+        config = get_config(request.thread_id)
         try:
-
-            graph_state = await graph.aget_state(
-                config
+            graph_state = await graph.aget_state(config)
+            pending_transaction = graph_state.values.get(
+                "pending_transaction"
             )
-
-            pending_transaction = (
-                graph_state.values.get(
-                    "pending_transaction"
-                )
-            )
-
             if not pending_transaction:
-
                 raise HTTPException(
                     status_code=404,
-                    detail="No pending transaction found."
+                    detail="No pending transaction found.",
                 )
 
-            stored_transaction_id = (
-                pending_transaction.get(
-                    "transaction_id"
-                )
-            )
-
-            if (
-                stored_transaction_id
-                != request.transaction_id
-            ):
-
+            stored_transaction_id = pending_transaction.get("transaction_id")
+            if stored_transaction_id != request.transaction_id:
                 raise HTTPException(
                     status_code=400,
-                    detail="Transaction ID mismatch."
+                    detail="Transaction ID mismatch.",
                 )
-
 
             result = await graph.ainvoke(
-
-                Command(
-                    resume={
-                        "approved": False,
-                        "auth_verified": False,
-                        "transaction_id":
-                            request.transaction_id
-                    }
-                ),
-
-                config=config
+                Command(resume={
+                    "approved": False,
+                    "auth_verified": False,
+                    "transaction_id": request.transaction_id,
+                }),
+                config=config,
             )
-
             return {
                 "status": "cancelled",
-
-                "message": result.get(
-                    "answer",
-                    "Transaction cancelled."
-                )
+                "message": result.get("answer", "Transaction cancelled."),
             }
-
         except HTTPException:
             raise
-
         except Exception as exc:
-
             raise HTTPException(
                 status_code=500,
-                detail=f"Transaction rejection failed: {exc}"
+                detail=f"Transaction rejection failed: {exc}",
             )
 
 
 @app.get("/threads/{thread_id}")
-async def get_thread_state(
-    thread_id: str
-):
-
-    lock = thread_locks[
-        thread_id
-    ]
-
+async def get_thread_state(thread_id: str):
+    lock = thread_locks[thread_id]
     async with lock:
-
         graph = get_graph()
-
-        config = get_config(
-            thread_id
-        )
-
+        config = get_config(thread_id)
         try:
-
-            state = await graph.aget_state(
-                config
-            )
-
+            state = await graph.aget_state(config)
             if not state.values:
-
                 raise HTTPException(
                     status_code=404,
-                    detail="Conversation not found."
+                    detail="Conversation not found.",
                 )
-
             # Be careful not to expose sensitive information.
             return {
                 "thread_id": thread_id,
-
-                "user_id": state.values.get(
-                    "user_id"
+                "user_id": state.values.get("user_id"),
+                "source_account": state.values.get("source_account"),
+                "approval_status": state.values.get("approval_status"),
+                "pending_transaction": state.values.get(
+                    "pending_transaction"
                 ),
-
-                "source_account":
-                    state.values.get(
-                        "source_account"
-                    ),
-
-                "approval_status":
-                    state.values.get(
-                        "approval_status"
-                    ),
-
-                "pending_transaction":
-                    state.values.get(
-                        "pending_transaction"
-                    ),
-
-                "next_nodes": list(
-                    state.next
-                )
+                "next_nodes": list(state.next),
             }
-
         except HTTPException:
             raise
-
         except Exception as exc:
-
             raise HTTPException(
                 status_code=500,
-                detail=f"Unable to read thread: {exc}"
+                detail=f"Unable to read thread: {exc}",
             )
 
 

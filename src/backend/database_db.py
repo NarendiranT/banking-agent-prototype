@@ -74,6 +74,7 @@ async def init_db():
 
         await db.commit()
 
+
 async def seed_data():
 
     async with aiosqlite.connect(DB_PATH) as db:

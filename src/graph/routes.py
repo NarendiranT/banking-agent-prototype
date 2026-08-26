@@ -1,68 +1,33 @@
 from graph.state import AgentState
 
 
-def intent_router(
-    state: AgentState
-) -> str:
-
-    intent = state.get(
-        "intent"
-    )
-
+def intent_router(state: AgentState) -> str:
+    intent = state.get("intent")
     if intent == "status":
         return "status"
-
     if intent == "transfer":
         return "transfer"
-
     return "unknown"
 
 
-def account_router(
-    state: AgentState
-) -> str:
-
-    if (
-        state.get("intent")
-        == "account_setup_failed"
-    ):
+def account_router(state: AgentState) -> str:
+    if state.get("intent") == "account_setup_failed":
         return "failed"
-
     if state.get("intent") == "status":
         return "status"
-
     return "transfer"
 
 
-def validation_router(
-    state: AgentState
-) -> str:
-
-    if (
-        state.get("intent")
-        == "validation_failed"
-    ):
-
+def validation_router(state: AgentState) -> str:
+    if state.get("intent") == "validation_failed":
         return "failed"
-
     return "valid"
 
 
-def approval_router(
-    state: AgentState
-) -> str:
-
+def approval_router(state: AgentState) -> str:
     if (
-        state.get(
-            "approval_status"
-        )
-        == "approved"
-        and
-        state.get(
-            "auth_verified"
-        )
+        state.get("approval_status") == "approved"
+        and state.get("auth_verified")
     ):
-
         return "execute"
-
     return "cancel"
