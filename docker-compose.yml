@@ -1,0 +1,82 @@
+services:
+  api:
+    build: .
+    image: banking-agent:latest
+    command: >
+      python -m uvicorn backend.main:app
+      --host 0.0.0.0
+      --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      PYTHONPATH: /app/src
+      BANKING_DB_PATH: /data/banking.db
+      CHECKPOINT_PATH: /data/langgraph_checkpoints.db
+    volumes:
+      - banking-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  mcp:
+    image: banking-agent:latest
+    build: .
+    command: >
+      python -m uvicorn mcp.server:app
+      --host 0.0.0.0
+      --port 8001
+    ports:
+      - "8001:8001"
+    environment:
+      PYTHONPATH: /app/src
+      BANKING_DB_PATH: /data/banking.db
+    volumes:
+      - banking-data:/data
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  ui:
+    image: banking-agent:latest
+    build: .
+    command: >
+      python -m streamlit run /app/src/ui/streamlit_app.py
+      --server.port 8501
+      --server.address 0.0.0.0
+      --server.headless true
+    ports:
+      - "8501:8501"
+    environment:
+      PYTHONPATH: /app/src
+      API_BASE_URL: http://api:8000
+      MCP_BASE_URL: http://mcp:8001
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  banking-data:

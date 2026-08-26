@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -29,7 +30,12 @@ from graph.routes import (  # noqa: E402
 from graph.state import AgentState  # noqa: E402
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-CHECKPOINT_PATH = ROOT_DIR / "langgraph_checkpoints.db"
+CHECKPOINT_PATH = Path(
+    os.getenv(
+        "CHECKPOINT_PATH",
+        str(ROOT_DIR / "langgraph_checkpoints.db"),
+    )
+)
 
 workflow = StateGraph(AgentState)
 
@@ -101,6 +107,7 @@ graph = workflow.compile()
 async def init_runtime_graph():
     global _runtime_graph, _connection, graph
 
+    CHECKPOINT_PATH.parent.mkdir(parents=True, exist_ok=True)
     _connection = await aiosqlite.connect(str(CHECKPOINT_PATH))
     checkpointer = AsyncSqliteSaver(_connection)
     await checkpointer.setup()

@@ -1,13 +1,15 @@
+import os
 from pathlib import Path
 
 import aiosqlite
 import bcrypt
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-DB_PATH = str(ROOT_DIR / "banking.db")
+DB_PATH = os.getenv("BANKING_DB_PATH", str(ROOT_DIR / "banking.db"))
 
 
 async def init_db():
+    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("PRAGMA journal_mode=WAL;")
         await db.execute("PRAGMA foreign_keys=ON;")

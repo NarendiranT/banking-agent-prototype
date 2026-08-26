@@ -78,6 +78,8 @@ src/
   ui/               Streamlit chat and HITL approval UI
   config.py         API_BASE_URL and MCP_BASE_URL
 run.py              Start api, ui, mcp, or all three
+Dockerfile          Image for api, ui, and mcp
+docker-compose.yml  Run all three services with a shared SQLite volume
 langgraph.json      LangGraph Studio / `langgraph dev` graph spec
 ```
 
@@ -127,6 +129,7 @@ make api
 make ui
 make mcp
 make run          # api + ui + mcp
+make docker-up    # same three services in Docker
 ```
 
 After `pip install -e .`:
@@ -139,6 +142,34 @@ banking-mcp
 
 API docs: http://localhost:8000/docs  
 MCP tools: http://localhost:8001/tools
+
+## Docker
+
+Requires Docker Compose v2.
+
+```bash
+docker compose up --build
+```
+
+Or:
+
+```bash
+make docker-up
+```
+
+| Service | URL |
+| --- | --- |
+| Streamlit UI | http://localhost:8501 |
+| FastAPI | http://localhost:8000 |
+| MCP tools | http://localhost:8001 |
+
+The UI container calls the API at `http://api:8000`. SQLite files (`banking.db` and graph checkpoints) live on the `banking-data` volume so API and MCP share the same accounts and transactions.
+
+```bash
+make docker-logs    # follow logs
+make docker-down    # stop containers
+docker compose down -v   # also delete the SQLite volume
+```
 
 Start **FastAPI first**, then the UI. The graph calls MCP tools in-process through `src/mcp/mcp_client.py`. The MCP server on port 8001 is the same tool surface for external clients.
 
