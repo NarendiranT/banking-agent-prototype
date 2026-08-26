@@ -40,6 +40,7 @@ services:
     environment:
       PYTHONPATH: /app/src
       BANKING_DB_PATH: /data/banking.db
+      CHECKPOINT_PATH: /data/langgraph_checkpoints.db
     volumes:
       - banking-data:/data
     depends_on:
