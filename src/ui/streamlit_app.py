@@ -44,26 +44,26 @@ if st.session_state.awaiting_pin and not pending:
         "Enter your PIN and account ID so the assistant "
         "can use your source account."
     )
+    identity_account = st.text_input(
+        "Enter Account ID",
+        placeholder="ACC001",
+        key="identity_account",
+    )
     identity_pin = st.text_input(
         "Enter Account PIN",
         type="password",
         max_chars=6,
         key="identity_pin",
     )
-    identity_account = st.text_input(
-        "Enter Account ID",
-        placeholder="ACC001",
-        key="identity_account",
-    )
     if st.session_state.approval_error:
         st.error(st.session_state.approval_error)
 
     if st.button("Continue", use_container_width=True, type="primary"):
-        if not identity_pin:
-            st.session_state.approval_error = "Please enter your PIN."
-            st.rerun()
         if not identity_account:
             st.session_state.approval_error = "Please enter your account ID."
+            st.rerun()
+        if not identity_pin:
+            st.session_state.approval_error = "Please enter your PIN."
             st.rerun()
         try:
             response = requests.post(

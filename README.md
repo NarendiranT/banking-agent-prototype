@@ -87,18 +87,13 @@ langgraph.json      LangGraph Studio / `langgraph dev` graph spec
 
 Python 3.11+ is required.
 
-Do not zip and send `venv/`, `.db` files, or `.env`. Those are machine-local. Send source plus `requirements.txt`, then the recipient creates a new virtualenv.
-
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-python run.py api           # terminal 1 — http://localhost:8000
-python run.py ui            # terminal 2 — http://localhost:8501
+python run.py all
 ```
-
-Or install the project (enables the `banking-api`, `banking-ui`, and `banking-mcp` commands):
 
 ```bash
 pip install -e .
@@ -221,7 +216,7 @@ curl -s http://localhost:8000/chat \
   -H "Content-Type: application/json" \
   -d '{
     "thread_id": "demo-status",
-    "message": "What is the status of TXN1001?"
+    "message": "What is the status of transcation?"
   }'
 
 curl -s http://localhost:8000/identify \
