@@ -9,7 +9,20 @@ from pydantic import BaseModel, Field
 
 from backend.database_db import ensure_db
 from backend.service import create_mock_transaction, verify_pin
-from graph.app import close_graph, get_graph, init_runtime_graph
+from graph.app import (
+    ainvoke_graph,
+    close_graph,
+    get_graph,
+    init_runtime_graph,
+)
+from telemetry import (
+    instrument_fastapi,
+    set_span_attributes,
+    setup_telemetry,
+    shutdown_telemetry,
+)
+
+setup_telemetry("banking-api")
 
 
 @asynccontextmanager
@@ -19,6 +32,7 @@ async def lifespan(app: FastAPI):
     await init_runtime_graph()
     yield
     await close_graph()
+    shutdown_telemetry()
 
 
 app = FastAPI(
@@ -29,6 +43,7 @@ app = FastAPI(
         "Agentic banking prototype using LangGraph, MCP and HITL approval."
     ),
 )
+instrument_fastapi(app)
 
 thread_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
@@ -150,12 +165,28 @@ def interrupt_http_response(state) -> dict | None:
     return None
 
 
+def _trace_request(thread_id: str, operation: str, **attrs) -> None:
+    set_span_attributes(
+        **{
+            "banking.thread_id": thread_id,
+            "banking.operation": operation,
+            **attrs,
+        }
+    )
+
+
+def _trace_response(payload: dict) -> dict:
+    set_span_attributes(**{"banking.response_status": payload.get("status")})
+    return payload
+
+
 @app.post("/chat")
 async def chat(request: ChatRequest):
     lock = thread_locks[request.thread_id]
     async with lock:
         graph = get_graph()
         config = get_config(request.thread_id)
+        _trace_request(request.thread_id, "chat")
         input_state = {
             "messages": [{"role": "user", "content": request.message}],
         }
@@ -163,15 +194,15 @@ async def chat(request: ChatRequest):
             input_state["user_id"] = request.user_id
 
         try:
-            result = await graph.ainvoke(input_state, config=config)
+            result = await ainvoke_graph(input_state, config=config)
             graph_state = await graph.aget_state(config)
             paused = interrupt_http_response(graph_state)
             if paused:
-                return paused
-            return {
+                return _trace_response(paused)
+            return _trace_response({
                 "status": "completed",
                 "message": result.get("answer", "Request completed."),
-            }
+            })
         except Exception as exc:
             raise HTTPException(
                 status_code=500,
@@ -185,6 +216,11 @@ async def identify_account(request: IdentifyRequest):
     async with lock:
         graph = get_graph()
         config = get_config(request.thread_id)
+        _trace_request(
+            request.thread_id,
+            "identify",
+            **{"banking.source_account": request.account_id.strip().upper()},
+        )
         try:
             graph_state = await graph.aget_state(config)
             if "set_user_account" not in graph_state.next:
@@ -196,7 +232,7 @@ async def identify_account(request: IdentifyRequest):
                     ),
                 )
 
-            result = await graph.ainvoke(
+            result = await ainvoke_graph(
                 Command(resume={
                     "pin": request.pin,
                     "account_id": request.account_id.strip().upper(),
@@ -206,13 +242,13 @@ async def identify_account(request: IdentifyRequest):
             graph_state = await graph.aget_state(config)
             paused = interrupt_http_response(graph_state)
             if paused:
-                return paused
-            return {
+                return _trace_response(paused)
+            return _trace_response({
                 "status": "completed",
                 "message": result.get("answer", "Account identified."),
                 "user_id": graph_state.values.get("user_id"),
                 "source_account": graph_state.values.get("source_account"),
-            }
+            })
         except HTTPException:
             raise
         except Exception as exc:
@@ -228,6 +264,15 @@ async def lookup_transaction_status(request: StatusLookupRequest):
     async with lock:
         graph = get_graph()
         config = get_config(request.thread_id)
+        _trace_request(
+            request.thread_id,
+            "lookup",
+            **{
+                "banking.transaction_id": (
+                    request.transaction_id.strip().upper()
+                ),
+            },
+        )
         try:
             graph_state = await graph.aget_state(config)
             if "transaction_status" not in graph_state.next:
@@ -239,7 +284,7 @@ async def lookup_transaction_status(request: StatusLookupRequest):
                     ),
                 )
 
-            result = await graph.ainvoke(
+            result = await ainvoke_graph(
                 Command(resume={
                     "transaction_id": request.transaction_id.strip().upper(),
                 }),
@@ -248,15 +293,15 @@ async def lookup_transaction_status(request: StatusLookupRequest):
             graph_state = await graph.aget_state(config)
             paused = interrupt_http_response(graph_state)
             if paused:
-                return paused
-            return {
+                return _trace_response(paused)
+            return _trace_response({
                 "status": "completed",
                 "message": result.get(
                     "answer",
                     "Transaction status lookup completed.",
                 ),
                 "transaction": result.get("transaction_result"),
-            }
+            })
         except HTTPException:
             raise
         except Exception as exc:
@@ -272,6 +317,11 @@ async def approve_transaction(request: ApprovalRequest):
     async with lock:
         graph = get_graph()
         config = get_config(request.thread_id)
+        _trace_request(
+            request.thread_id,
+            "approve",
+            **{"banking.transaction_id": request.transaction_id},
+        )
         try:
             graph_state = await graph.aget_state(config)
             pending_transaction = graph_state.values.get(
@@ -306,7 +356,7 @@ async def approve_transaction(request: ApprovalRequest):
                     detail="Invalid transaction PIN.",
                 )
 
-            result = await graph.ainvoke(
+            result = await ainvoke_graph(
                 Command(resume={
                     "approved": True,
                     "auth_verified": True,
@@ -316,18 +366,18 @@ async def approve_transaction(request: ApprovalRequest):
             )
             new_state = await graph.aget_state(config)
             if new_state.next:
-                return {
+                return _trace_response({
                     "status": "processing",
                     "message": "Transaction is still being processed.",
-                }
-            return {
+                })
+            return _trace_response({
                 "status": "completed",
                 "message": result.get(
                     "answer",
                     "Transaction completed successfully.",
                 ),
                 "transaction": result.get("transaction_result"),
-            }
+            })
         except HTTPException:
             raise
         except Exception as exc:
@@ -343,6 +393,11 @@ async def reject_transaction(request: RejectRequest):
     async with lock:
         graph = get_graph()
         config = get_config(request.thread_id)
+        _trace_request(
+            request.thread_id,
+            "reject",
+            **{"banking.transaction_id": request.transaction_id},
+        )
         try:
             graph_state = await graph.aget_state(config)
             pending_transaction = graph_state.values.get(
@@ -361,7 +416,7 @@ async def reject_transaction(request: RejectRequest):
                     detail="Transaction ID mismatch.",
                 )
 
-            result = await graph.ainvoke(
+            result = await ainvoke_graph(
                 Command(resume={
                     "approved": False,
                     "auth_verified": False,
@@ -369,10 +424,10 @@ async def reject_transaction(request: RejectRequest):
                 }),
                 config=config,
             )
-            return {
+            return _trace_response({
                 "status": "cancelled",
                 "message": result.get("answer", "Transaction cancelled."),
-            }
+            })
         except HTTPException:
             raise
         except Exception as exc:
@@ -388,6 +443,7 @@ async def get_thread_state(thread_id: str):
     async with lock:
         graph = get_graph()
         config = get_config(thread_id)
+        _trace_request(thread_id, "thread_state")
         try:
             state = await graph.aget_state(config)
             if not state.values:

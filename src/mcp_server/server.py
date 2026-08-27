@@ -17,6 +17,16 @@ from backend.service import (
     get_user_account_by_pin as lookup_account_by_pin,
     transfer_money,
 )
+from telemetry import (
+    instrument_starlette,
+    set_span_attributes,
+    setup_telemetry,
+    shutdown_telemetry,
+    traced,
+)
+
+setup_telemetry("banking-mcp")
+instrument_starlette()
 
 
 @asynccontextmanager
@@ -45,8 +55,10 @@ async def health_check(request: Request) -> JSONResponse:
 
 
 @mcp.tool
+@traced("mcp.tool.get_transaction_status")
 async def get_transaction_status(transaction_id: str) -> dict:
     """Look up a transaction by ID."""
+    set_span_attributes(**{"banking.transaction_id": transaction_id})
     transaction = await lookup_transaction(transaction_id)
     if not transaction:
         raise ToolError(f"Transaction {transaction_id} was not found.")
@@ -54,8 +66,10 @@ async def get_transaction_status(transaction_id: str) -> dict:
 
 
 @mcp.tool
+@traced("mcp.tool.get_account_balance")
 async def get_account_balance(account_id: str) -> dict:
     """Look up an account balance by account ID."""
+    set_span_attributes(**{"banking.source_account": account_id})
     account = await lookup_account(account_id)
     if not account:
         raise ToolError(f"Account {account_id} was not found.")
@@ -63,8 +77,12 @@ async def get_account_balance(account_id: str) -> dict:
 
 
 @mcp.tool
+@traced("mcp.tool.validate_account")
 async def validate_account(account_id: str) -> dict:
     """Validate that a destination account exists and is active."""
+    set_span_attributes(
+        **{"banking.destination_account": account_id}
+    )
     account = await lookup_account(account_id)
     if not account:
         raise ToolError(f"Account {account_id} was not found.")
@@ -72,11 +90,13 @@ async def validate_account(account_id: str) -> dict:
 
 
 @mcp.tool
+@traced("mcp.tool.get_account_by_pin")
 async def get_account_by_pin(
     pin: str,
     account_id: str | None = None,
 ) -> dict:
     """Identify a user and source account from a PIN and account ID."""
+    set_span_attributes(**{"banking.source_account": account_id})
     result = await lookup_account_by_pin(pin, account_id)
     if not result:
         raise ToolError("Invalid PIN.")
@@ -88,6 +108,7 @@ async def get_account_by_pin(
 
 
 @mcp.tool
+@traced("mcp.tool.execute_transaction")
 async def execute_transaction(
     transaction_id: str,
     source_account: str,
@@ -96,6 +117,15 @@ async def execute_transaction(
     user_id: str = "USER001",
 ) -> dict:
     """Move funds between two accounts."""
+    set_span_attributes(
+        **{
+            "banking.transaction_id": transaction_id,
+            "banking.source_account": source_account,
+            "banking.destination_account": destination_account,
+            "banking.amount": amount,
+            "banking.user_id": user_id,
+        }
+    )
     result = await transfer_money(
         transaction_id=transaction_id,
         source_account=source_account,
@@ -109,7 +139,10 @@ async def execute_transaction(
 
 
 def run() -> None:
-    mcp.run(transport="http", host="0.0.0.0", port=8001)
+    try:
+        mcp.run(transport="http", host="0.0.0.0", port=8001)
+    finally:
+        shutdown_telemetry()
 
 
 if __name__ == "__main__":

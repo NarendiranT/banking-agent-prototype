@@ -4,6 +4,7 @@ from pathlib import Path
 import aiosqlite
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
+from opentelemetry.trace import Status, StatusCode
 
 _SRC_DIR = Path(__file__).resolve().parents[1]
 if str(_SRC_DIR) not in sys.path:
@@ -29,19 +30,54 @@ from graph.routes import (  # noqa: E402
     validation_router,
 )
 from graph.state import AgentState  # noqa: E402
+from telemetry import (  # noqa: E402
+    get_tracer,
+    set_span_attributes,
+    traced_graph_node,
+)
 
 workflow = StateGraph(AgentState)
 
-workflow.add_node("conversation_agent", conversation_agent)
-workflow.add_node("set_user_account", set_user_account)
-workflow.add_node("transaction_status", transaction_status)
-workflow.add_node("account_balance", account_balance)
-workflow.add_node("validate_transaction", validate_transaction)
-workflow.add_node("approval", approval_node)
-workflow.add_node("execute_transaction", execute_transaction)
-workflow.add_node("cancel_transaction", cancel_transaction)
-workflow.add_node("unknown_request", unknown_request)
-workflow.add_node("final_response", final_response)
+workflow.add_node(
+    "conversation_agent",
+    traced_graph_node("conversation_agent")(conversation_agent),
+)
+workflow.add_node(
+    "set_user_account",
+    traced_graph_node("set_user_account")(set_user_account),
+)
+workflow.add_node(
+    "transaction_status",
+    traced_graph_node("transaction_status")(transaction_status),
+)
+workflow.add_node(
+    "account_balance",
+    traced_graph_node("account_balance")(account_balance),
+)
+workflow.add_node(
+    "validate_transaction",
+    traced_graph_node("validate_transaction")(validate_transaction),
+)
+workflow.add_node(
+    "approval",
+    traced_graph_node("approval")(approval_node),
+)
+workflow.add_node(
+    "execute_transaction",
+    traced_graph_node("execute_transaction")(execute_transaction),
+)
+workflow.add_node(
+    "cancel_transaction",
+    traced_graph_node("cancel_transaction")(cancel_transaction),
+)
+workflow.add_node(
+    "unknown_request",
+    traced_graph_node("unknown_request")(unknown_request),
+)
+workflow.add_node(
+    "final_response",
+    traced_graph_node("final_response")(final_response),
+)
 
 workflow.add_edge(START, "conversation_agent")
 
@@ -119,6 +155,37 @@ def get_graph():
             "Graph is not initialized. Call init_runtime_graph() first."
         )
     return _runtime_graph
+
+
+async def ainvoke_graph(input_state, config):
+    graph = get_graph()
+    thread_id = (config or {}).get("configurable", {}).get("thread_id")
+    with get_tracer().start_as_current_span(
+        "langgraph.invoke",
+        record_exception=False,
+        set_status_on_exception=False,
+    ) as span:
+        set_span_attributes(**{"langgraph.thread_id": thread_id})
+        try:
+            result = await graph.ainvoke(input_state, config=config)
+        except Exception as exc:
+            name = type(exc).__name__
+            if "Interrupt" in name or "BubbleUp" in name:
+                span.set_attribute("langgraph.interrupted", True)
+                raise
+            span.record_exception(exc)
+            span.set_status(Status(StatusCode.ERROR, str(exc)))
+            raise
+        if isinstance(result, dict):
+            set_span_attributes(
+                **{
+                    "banking.intent": result.get("intent"),
+                    "banking.has_answer": bool(result.get("answer")),
+                    "banking.user_id": result.get("user_id"),
+                    "banking.source_account": result.get("source_account"),
+                }
+            )
+        return result
 
 
 async def close_graph():

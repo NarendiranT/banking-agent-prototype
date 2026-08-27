@@ -27,6 +27,31 @@ python run.py all
 
 Open http://localhost:8501 to chat.
 
+## Observability
+
+Traces and metrics are exported with OpenTelemetry (OTLP/HTTP). Start Jaeger, then run the app:
+
+```bash
+docker compose up -d jaeger
+python run.py all
+```
+
+| Service | URL |
+| --- | --- |
+| Jaeger UI | http://localhost:16686 |
+
+Look for services `banking-api`, `banking-mcp`, and `banking-ui`. A chat request produces an HTTP span with nested LangGraph node and banking-operation spans. PINs are never recorded.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `OTEL_ENABLED` | on when an OTLP endpoint is set | Set `false` to disable telemetry |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4318` | OTLP collector |
+| `OTEL_CONSOLE_EXPORTER` | `false` | Print spans to stdout |
+| `OTEL_SERVICE_NAME` | per process (`banking-api`, `banking-mcp`, `banking-ui`) | Service name in traces |
+| `OTEL_ENVIRONMENT` | `local` | `deployment.environment` resource attribute |
+
+`docker compose up` starts Jaeger with the API, MCP, and UI.
+
 ## Demo accounts
 
 | User | PIN | Account | Balance |

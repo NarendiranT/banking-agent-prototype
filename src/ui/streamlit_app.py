@@ -6,6 +6,9 @@ import requests
 import streamlit as st
 
 from config import API_BASE_URL
+from telemetry import setup_telemetry
+
+setup_telemetry("banking-ui")
 
 st.set_page_config(
     page_title="Banking Assistant",

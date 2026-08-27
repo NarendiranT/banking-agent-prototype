@@ -4,12 +4,15 @@ import aiosqlite
 import bcrypt
 
 from backend.database_db import DB_PATH
+from telemetry import set_span_attributes, traced
 
 
+@traced("banking.get_account_by_pin")
 async def get_user_account_by_pin(
     pin: str,
     account_id: str | None = None,
 ) -> dict | None:
+    set_span_attributes(**{"banking.source_account": account_id})
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
@@ -27,6 +30,7 @@ async def get_user_account_by_pin(
                 break
 
         if not matched:
+            set_span_attributes(**{"banking.pin_valid": False})
             return None
 
         if matched["is_locked"]:
@@ -65,11 +69,26 @@ async def get_user_account_by_pin(
             )
         account = await cursor.fetchone()
         if not account:
+            set_span_attributes(
+                **{
+                    "banking.user_id": matched["user_id"],
+                    "banking.pin_valid": True,
+                    "banking.account_found": False,
+                }
+            )
             return {
                 "user_id": matched["user_id"],
                 "name": matched["name"],
                 "is_locked": False,
             }
+        set_span_attributes(
+            **{
+                "banking.user_id": matched["user_id"],
+                "banking.source_account": account["account_id"],
+                "banking.pin_valid": True,
+                "banking.account_found": True,
+            }
+        )
         return {
             **dict(account),
             "name": matched["name"],
@@ -77,7 +96,9 @@ async def get_user_account_by_pin(
         }
 
 
+@traced("banking.verify_pin")
 async def verify_pin(user_id: str, pin: str) -> bool:
+    set_span_attributes(**{"banking.user_id": user_id})
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
@@ -90,6 +111,7 @@ async def verify_pin(user_id: str, pin: str) -> bool:
         )
         user = await cursor.fetchone()
         if not user or user["is_locked"]:
+            set_span_attributes(**{"banking.pin_valid": False})
             return False
 
         valid = bcrypt.checkpw(pin.encode(), user["pin_hash"].encode())
@@ -103,6 +125,7 @@ async def verify_pin(user_id: str, pin: str) -> bool:
                 (user_id,),
             )
             await db.commit()
+            set_span_attributes(**{"banking.pin_valid": True})
             return True
 
         failed_attempts = user["failed_pin_attempts"] + 1
@@ -125,10 +148,18 @@ async def verify_pin(user_id: str, pin: str) -> bool:
                 (failed_attempts, user_id),
             )
         await db.commit()
+        set_span_attributes(
+            **{
+                "banking.pin_valid": False,
+                "banking.failed_pin_attempts": failed_attempts,
+            }
+        )
         return False
 
 
+@traced("banking.get_transaction_status")
 async def get_transaction_status(transaction_id: str):
+    set_span_attributes(**{"banking.transaction_id": transaction_id})
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
@@ -143,11 +174,20 @@ async def get_transaction_status(transaction_id: str):
         )
         transaction = await cursor.fetchone()
         if not transaction:
+            set_span_attributes(**{"banking.transaction_found": False})
             return None
+        set_span_attributes(
+            **{
+                "banking.transaction_found": True,
+                "banking.transaction_status": transaction["status"],
+            }
+        )
         return dict(transaction)
 
 
+@traced("banking.get_account")
 async def get_account(account_id: str):
+    set_span_attributes(**{"banking.source_account": account_id})
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
@@ -162,7 +202,15 @@ async def get_account(account_id: str):
         )
         account = await cursor.fetchone()
         if not account:
+            set_span_attributes(**{"banking.account_found": False})
             return None
+        set_span_attributes(
+            **{
+                "banking.account_found": True,
+                "banking.user_id": account["user_id"],
+                "banking.account_status": account["status"],
+            }
+        )
         return dict(account)
 
 
@@ -190,6 +238,7 @@ async def create_mock_transaction():
         await db.commit()
 
 
+@traced("banking.transfer_money")
 async def transfer_money(
     transaction_id: str,
     source_account: str,
@@ -197,6 +246,15 @@ async def transfer_money(
     amount: float,
     user_id: str,
 ):
+    set_span_attributes(
+        **{
+            "banking.transaction_id": transaction_id,
+            "banking.source_account": source_account,
+            "banking.destination_account": destination_account,
+            "banking.amount": amount,
+            "banking.user_id": user_id,
+        }
+    )
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         await db.execute("BEGIN IMMEDIATE")
@@ -213,6 +271,14 @@ async def transfer_money(
             existing = await existing_cursor.fetchone()
             if existing:
                 await db.commit()
+                set_span_attributes(
+                    **{
+                        "banking.transfer_success": (
+                            existing["status"] == "SUCCESS"
+                        ),
+                        "banking.idempotent": True,
+                    }
+                )
                 return {
                     **dict(existing),
                     "success": existing["status"] == "SUCCESS",
@@ -296,6 +362,12 @@ async def transfer_money(
                 ),
             )
             await db.commit()
+            set_span_attributes(
+                **{
+                    "banking.transfer_success": True,
+                    "banking.transaction_id": final_transaction_id,
+                }
+            )
             return {
                 "success": True,
                 "transaction_id": final_transaction_id,
