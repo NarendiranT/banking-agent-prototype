@@ -1,0 +1,39 @@
+---
+description: Python standards for banking-agent .py files
+globs: **/*.py
+alwaysApply: false
+---
+
+# Python standards
+
+Python 3.11+. Annotate new public functions with `list[str]`, `dict[str, Any]`, and `str | None`. Order imports as stdlib, third party, then absolute locals (`from backend.service import ...`).
+
+## Where code goes
+
+- SQL, PIN checks, and transfers belong in `backend/service.py`. Schema changes belong in `backend/database_db.py`.
+- Graph nodes call `mcp_server.mcp_client` and return a partial `AgentState` dict. Add new keys to `AgentState` before reading them.
+- `ui/` calls the API over HTTP and does not import `backend` or `graph`.
+- Read app paths and URLs from `config.py`.
+
+## Async, SQL, and secrets
+
+Use `async with aiosqlite.connect(...)`, set `row_factory = aiosqlite.Row`, and bind SQL with `?`. Call bcrypt from async code via `asyncio.to_thread`. Leave existing float balances in place; parse any new money math with `Decimal(str(value))`.
+
+```python
+# BAD
+await db.execute(f"SELECT * FROM accounts WHERE account_id = '{account_id}'")
+valid = bcrypt.checkpw(pin.encode(), stored_hash.encode())
+set_span_attributes(**{"banking.pin": pin})
+
+# GOOD
+cursor = await db.execute(
+    "SELECT * FROM accounts WHERE account_id = ?",
+    (account_id,),
+)
+valid = await asyncio.to_thread(
+    bcrypt.checkpw, pin.encode(), stored_hash.encode()
+)
+set_span_attributes(**{"banking.pin_valid": valid, "banking.user_id": user_id})
+```
+
+Put `@traced("banking.<operation>")` on new async service functions. Register a new graph node with `traced_graph_node`. Record `banking.user_id` and `banking.pin_valid`, never a PIN or `pin_hash`.
